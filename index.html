@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;600&display=swap">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <style>
 :root{
   color-scheme:light;
@@ -139,13 +139,14 @@ tbody tr.sel{background:var(--accent-soft)}
         <div class="row">
           <label class="field"><span>Size by</span>
             <select id="sizeBy">
+              <option value="sheets">Sheets of paper</option>
               <option value="total">Total spots</option>
               <option value="width">Width in spots</option>
               <option value="cm">Width in cm</option>
             </select>
           </label>
-          <label class="field"><span id="sizeValLabel">Total spots</span>
-            <input type="number" id="sizeVal" min="1" step="1" value="10000">
+          <label class="field"><span id="sizeValLabel">Sheets</span>
+            <input type="number" id="sizeVal" min="1" step="1" value="1">
           </label>
         </div>
         <div class="row">
@@ -157,6 +158,7 @@ tbody tr.sel{background:var(--accent-soft)}
           </label>
         </div>
         <div class="note" id="gapnote"></div>
+        <div class="note" id="cropnote" hidden></div>
       </div>
 
       <div class="sec">
@@ -255,10 +257,10 @@ tbody tr.sel{background:var(--accent-soft)}
                   <option value="10">10 x 10 (100 spots)</option>
                   <option value="15">15 x 15 (225 spots)</option>
                   <option value="20">20 x 20 (400 spots)</option>
-                  <option value="25" selected>25 x 25 (625 spots)</option>
+                  <option value="25">25 x 25 (625 spots)</option>
                   <option value="30">30 x 30 (900 spots)</option>
                   <option value="40">40 x 40 (1,600 spots)</option>
-                  <option value="0">Fill the paper</option>
+                  <option value="0" selected>Fill the paper</option>
                 </select>
               </label>
             </div>
@@ -273,13 +275,13 @@ tbody tr.sel{background:var(--accent-soft)}
               <button class="mini" id="dlPage">Download this page (PNG, 300 dpi)</button>
             </div>
             <div class="row">
-              <label class="field"><span>ZIP from page</span><input type="number" id="zipFrom" min="1" value="1"></label>
+              <label class="field"><span>PDF from page</span><input type="number" id="zipFrom" min="1" value="1"></label>
               <label class="field"><span>to page</span><input type="number" id="zipTo" min="1" value="1"></label>
             </div>
             <div class="row">
-              <button class="mini" id="dlZip">Download pages + key as ZIP</button>
+              <button class="mini primary" id="dlZip">Download print PDF (pages + color key)</button>
             </div>
-            <div class="note">Print at 100% scale (no "fit to page") so each square lands at the spacing you set. Up to 60 pages per ZIP.</div>
+            <div class="note">The PDF pages are exact paper size. Print at "Actual size" or 100%, never "Fit to page". Print page 1 first and measure the 50 mm scale bar at the top before printing the rest. Up to 60 pages per PDF.</div>
             <div class="note" id="zipStatus"></div>
           </div>
           <div class="pageprev"><canvas id="pageCanvas" width="10" height="10"></canvas></div>
@@ -377,7 +379,7 @@ var RAW="3713|Salmon Very Light|FFE2E2;761|Salmon Light|FFC9C9;760|Salmon|F5ADAD
 var PAL=RAW.split(";").map(function(s){var a=s.split("|");var hx=a[2];return {code:a[0],name:a[1],hex:"#"+hx,r:parseInt(hx.slice(0,2),16),g:parseInt(hx.slice(2,4),16),b:parseInt(hx.slice(4,6),16)};});
 var PAL_RGB=new Uint8Array(PAL.length*3);PAL.forEach(function(p,i){PAL_RGB[i*3]=p.r;PAL_RGB[i*3+1]=p.g;PAL_RGB[i*3+2]=p.b;});
 var PAPERS={letter:[215.9,279.4],a4:[210,297],legal:[215.9,355.6],tabloid:[279.4,431.8],a3:[297,420]};
-var PRESETS=[["1k",1000],["2.5k",2500],["5k",5000],["10k",10000],["25k",25000],["50k",50000],["100k",100000]];
+var PRESETS=[["1 sheet",1],["2",2],["4",4],["6",6],["9",9],["12",12],["16",16],["18",18],["25",25]];
 var $=function(id){return document.getElementById(id);};
 var fmt=function(n){return Math.round(n).toLocaleString("en-US");};
 
@@ -390,12 +392,12 @@ var worker=null;
 (function(){var cs=["#C8245E","#F2B134","#2B5FD9","#18202E","#6BB38A","#F7C6D4","#8E6BD6","#E86A33","#9CC9F0","#C8245E","#F2B134","#2B5FD9","#E9EDF2","#6BB38A","#18202E","#F7C6D4"];var m=$("mark");cs.forEach(function(c){var i=document.createElement("i");i.style.background=c;m.appendChild(i);});})();
 
 // presets
-PRESETS.forEach(function(p){var b=document.createElement("button");b.className="chip";b.textContent=p[0];b.dataset.v=p[1];b.setAttribute("aria-pressed","false");b.onclick=function(){$("sizeBy").value="total";$("sizeVal").value=p[1];syncSizeLabel();refreshPlan();};$("presets").appendChild(b);});
+PRESETS.forEach(function(p){var b=document.createElement("button");b.className="chip";b.textContent=p[0];b.dataset.v=p[1];b.setAttribute("aria-pressed","false");b.onclick=function(){$("sizeBy").value="sheets";$("sizeVal").value=p[1];syncSizeLabel();refreshPlan();build();};$("presets").appendChild(b);});
 
-function syncSizeLabel(){var m=$("sizeBy").value;$("sizeValLabel").textContent=m==="total"?"Total spots":m==="width"?"Spots across":"Width in cm";$("sizeVal").step=m==="cm"?"0.1":"1";}
+function syncSizeLabel(){var m=$("sizeBy").value;$("sizeValLabel").textContent=m==="sheets"?"Sheets":m==="total"?"Total spots":m==="width"?"Spots across":"Width in cm";$("sizeVal").step=m==="cm"?"0.1":"1";}
 $("sizeBy").onchange=function(){
-  var plan=getPlan(); var m=$("sizeBy").value;
-  if(plan){ if(m==="total") $("sizeVal").value=plan.cols*plan.rows; else if(m==="width") $("sizeVal").value=plan.cols; else $("sizeVal").value=(plan.cols*plan.pitch/10).toFixed(1); }
+  var plan=lastPlan; var m=$("sizeBy").value;
+  if(plan){ if(m==="sheets") $("sizeVal").value=Math.max(1,plan.sheets||1); else if(m==="total") $("sizeVal").value=plan.cols*plan.rows; else if(m==="width") $("sizeVal").value=plan.cols; else $("sizeVal").value=(plan.cols*plan.pitch/10).toFixed(1); }
   syncSizeLabel(); refreshPlan();
 };
 
@@ -403,19 +405,37 @@ function aspect(){return srcImg?srcImg.width/srcImg.height:1;}
 function getPlan(){
   var m=$("sizeBy").value, v=parseFloat($("sizeVal").value), pitch=parseFloat($("pitchMm").value)||3, drill=parseFloat($("drillMm").value)||2.5, a=aspect(), cols, rows;
   if(!(v>0)) return null;
+  if(m==="sheets"){
+    var N=Math.max(1,Math.min(400,Math.round(v))), best=null;
+    ["portrait","landscape"].forEach(function(o){
+      var cap=pageCap(o,pitch,true);
+      for(var ax=1;ax<=N;ax++){
+        if(N%ax) continue;
+        var ay=N/ax, c=ax*cap.perC, r=ay*cap.perR, ga=c/r;
+        var loss=1-Math.min(ga,a)/Math.max(ga,a);
+        if(!best||loss<best.loss-1e-9) best={cols:c,rows:r,orient:o,sheets:N,loss:loss,ax:ax,ay:ay};
+      }
+    });
+    return {cols:best.cols,rows:best.rows,pitch:pitch,drill:drill,orient:best.orient,sheets:N,crop:true,loss:best.loss,ax:best.ax,ay:best.ay};
+  }
   if(m==="total"){cols=Math.max(1,Math.round(Math.sqrt(v*a)));rows=Math.max(1,Math.round(cols/a));}
   else if(m==="width"){cols=Math.max(1,Math.round(v));rows=Math.max(1,Math.round(cols/a));}
   else {cols=Math.max(1,Math.round(v*10/pitch));rows=Math.max(1,Math.round(cols/a));}
-  return {cols:cols,rows:rows,pitch:pitch,drill:drill};
+  return {cols:cols,rows:rows,pitch:pitch,drill:drill,orient:a>1.05?"landscape":"portrait"};
 }
 function sizeText(cols,rows,pitch){
   var wcm=cols*pitch/10, hcm=rows*pitch/10;
   var u=function(cm){return cm>=100?(cm/100).toFixed(2)+" m":cm.toFixed(1)+" cm";};
   return u(wcm)+" x "+u(hcm)+"  ("+(wcm/2.54).toFixed(1)+" x "+(hcm/2.54).toFixed(1)+" in)";
 }
+var lastPlan=null;
 function refreshPlan(){
-  var p=getPlan(); var tot=p?p.cols*p.rows:0;
-  document.querySelectorAll("#presets .chip").forEach(function(b){b.setAttribute("aria-pressed",String($("sizeBy").value==="total"&&+b.dataset.v===+$("sizeVal").value));});
+  var sheetsMode=$("sizeBy").value==="sheets"; $("section").disabled=sheetsMode; if(sheetsMode) $("section").value="0";
+  var p=getPlan(); lastPlan=p;
+  var cn=$("cropnote");
+  if(p&&p.crop){cn.hidden=false;cn.textContent=p.sheets+(p.sheets===1?" sheet":" sheets")+" laid out "+p.ax+" across x "+p.ay+" down, "+p.orient+". "+(p.loss>0.005?"The image is centered and about "+Math.round(p.loss*100)+"% is trimmed from the "+(p.cols/p.rows>aspect()?"top and bottom":"sides")+" so every sheet is filled.":"The image fills every sheet with no trimming.");}
+  else cn.hidden=true; var tot=p?p.cols*p.rows:0;
+  document.querySelectorAll("#presets .chip").forEach(function(b){b.setAttribute("aria-pressed",String($("sizeBy").value==="sheets"&&+b.dataset.v===+$("sizeVal").value));});
   var pitch=parseFloat($("pitchMm").value)||3, drill=parseFloat($("drillMm").value)||2.5, gap=pitch-drill;
   $("gapnote").textContent=gap>0?("Gap between spots: "+gap.toFixed(2)+" mm. Squares are laid out on a "+pitch+" mm grid."):"Spacing is smaller than the spot, so spots will overlap. Raise the spacing.";
   $("specline").innerHTML="<span>Spot <b>"+drill+" mm</b></span><span>Grid <b>"+pitch+" mm</b></span><span>Palette <b>DMC 447</b></span>"+(p?"<span>Plan <b>"+fmt(p.cols)+" x "+fmt(p.rows)+"</b></span>":"");
@@ -460,8 +480,14 @@ drop.addEventListener("drop",function(e){var f=e.dataTransfer.files&&e.dataTrans
 window.addEventListener("paste",function(e){var items=e.clipboardData&&e.clipboardData.items;if(!items)return;for(var i=0;i<items.length;i++){if(items[i].type.indexOf("image")===0){loadFile(items[i].getAsFile());break;}}});
 
 // ---------- resample ----------
-function resample(img,cols,rows){
+function resample(img,cols,rows,crop){
   var sw=img.naturalWidth||img.width, sh=img.naturalHeight||img.height, src=img;
+  if(crop){
+    var ta=cols/rows, ia=sw/sh, cw=sw, ch=sh;
+    if(ia>ta) cw=Math.round(sh*ta); else ch=Math.round(sw/ta);
+    var cc=document.createElement("canvas");cc.width=cw;cc.height=ch;cc.getContext("2d").drawImage(img,Math.round((sw-cw)/2),Math.round((sh-ch)/2),cw,ch,0,0,cw,ch);
+    src=cc;sw=cw;sh=ch;
+  }
   while(sw/2>=cols*1.5&&sh/2>=rows*1.5){
     var nw=Math.max(cols,Math.round(sw/2)), nh=Math.max(rows,Math.round(sh/2));
     var t=document.createElement("canvas");t.width=nw;t.height=nh;var tx=t.getContext("2d");tx.imageSmoothingEnabled=true;tx.imageSmoothingQuality="high";tx.drawImage(src,0,0,nw,nh);src=t;sw=nw;sh=nh;
@@ -481,13 +507,13 @@ function build(){
   $("build").disabled=true;
   setTimeout(function(){
     var data;
-    try{data=resample(srcImg,plan.cols,plan.rows);}catch(err){busy(false);$("build").disabled=false;setHover("This size is too large for this browser to hold in memory. Try fewer spots.");return;}
+    try{data=resample(srcImg,plan.cols,plan.rows,!!plan.crop);}catch(err){busy(false);$("build").disabled=false;setHover("This size is too large for this browser to hold in memory. Try fewer spots.");return;}
     var onMsg=function(e){
       var m=e.data;
       if(m.type==="progress"){busy(true,m.text,0.05+m.v*0.9);return;}
       busy(true,"Drawing",0.97);
       var colors=m.pal.map(function(pi,i){var p=PAL[pi];return {key:i+1,code:p.code,name:p.name,hex:p.hex,r:p.r,g:p.g,b:p.b,count:m.counts[i],light:(0.299*p.r+0.587*p.g+0.114*p.b)>150};});
-      P={cols:plan.cols,rows:plan.rows,cells:new Uint16Array(m.cells),colors:colors,pitch:plan.pitch,drill:plan.drill};
+      P={cols:plan.cols,rows:plan.rows,cells:new Uint16Array(m.cells),colors:colors,pitch:plan.pitch,drill:plan.drill,orient:plan.orient};
       P.colorCanvas=makeColorCanvas(-1);
       view.sel=-1;view.selCanvas=null;$("clearSel").hidden=true;
       if(worker){worker.terminate();worker=null;}
@@ -529,7 +555,7 @@ function makeColorCanvas(sel){
 // ---------- stats ----------
 function renderStats(){
   var tot=P.cols*P.rows, pg=pageLayout();
-  var items=[[fmt(P.cols)+" x "+fmt(P.rows),"spots across x down"],[fmt(tot),"total spots"],[sizeText(P.cols,P.rows,P.pitch).split("  ")[0],"canvas at "+P.pitch+" mm spacing"],[P.colors.length,"DMC colors used"],[fmt(pg.nx*pg.ny),"printed pages ("+pg.name+")"],[fmt(Math.ceil(tot*1.1)),"spots to buy with 10% spare"]];
+  var items=[[fmt(P.cols)+" x "+fmt(P.rows),"spots across x down"],[fmt(tot),"total spots"],[sizeText(P.cols,P.rows,P.pitch).split("  ")[0],"canvas at "+P.pitch+" mm spacing"],[P.colors.length,"DMC colors used"],[fmt(pg.nx*pg.ny),"printed pages ("+pg.name+", "+pg.orient+")"],[fmt(Math.ceil(tot*1.1)),"spots to buy with 10% spare"]];
   $("stats").innerHTML=items.map(function(a){return '<div class="stat"><span class="v">'+a[0]+'</span><span class="k">'+a[1]+'</span></div>';}).join("");
 }
 
@@ -632,12 +658,18 @@ function hoverAt(x,y){
 }
 
 // ---------- pages ----------
+function pageCap(orient,pitch,sheetsMode){
+  if(sheetsMode===undefined) sheetsMode=$("sizeBy").value==="sheets";
+  var pp=PAPERS[$("paper").value]||PAPERS.letter, m=Math.max(3,parseFloat($("margin").value)||12), header=10;
+  var w=orient==="landscape"?pp[1]:pp[0], h=orient==="landscape"?pp[0]:pp[1];
+  var perC=Math.max(1,Math.floor((w-2*m)/pitch)), perR=Math.max(1,Math.floor((h-2*m-header)/pitch));
+  var sec=sheetsMode?0:(parseInt($("section").value)||0); if(sec>0){perC=Math.min(perC,sec);perR=Math.min(perR,sec);}
+  return {w:w,h:h,m:m,header:header,perC:perC,perR:perR};
+}
 function pageLayout(){
-  var pp=PAPERS[$("paper").value]||PAPERS.letter, m=Math.max(3,parseFloat($("margin").value)||12), pitch=P?P.pitch:3, header=10;
-  var perC=Math.max(1,Math.floor((pp[0]-2*m)/pitch)), perR=Math.max(1,Math.floor((pp[1]-2*m-header)/pitch));
-  var sec=parseInt($("section").value)||0; if(sec>0){perC=Math.min(perC,sec);perR=Math.min(perR,sec);}
+  var cap=pageCap(P?P.orient:"portrait",P?P.pitch:3), m=cap.m, header=cap.header, perC=cap.perC, perR=cap.perR;
   var cols=P?P.cols:1, rows=P?P.rows:1;
-  return {w:pp[0],h:pp[1],m:m,header:header,perC:perC,perR:perR,nx:Math.ceil(cols/perC),ny:Math.ceil(rows/perR),name:{letter:"Letter",a4:"A4",legal:"Legal",tabloid:"Tabloid",a3:"A3"}[$("paper").value]};
+  return {orient:P?P.orient:"portrait",w:cap.w,h:cap.h,m:m,header:header,perC:perC,perR:perR,nx:Math.ceil(cols/perC),ny:Math.ceil(rows/perR),name:{letter:"Letter",a4:"A4",legal:"Legal",tabloid:"Tabloid",a3:"A3"}[$("paper").value]};
 }
 function pageOfCell(c,r){var L=pageLayout();return Math.floor(r/L.perR)*L.nx+Math.floor(c/L.perC)+1;}
 var curPage=0;
@@ -648,11 +680,11 @@ function renderPages(){
   if(n<=3000){var h="";for(var i=0;i<n;i++){var px=i%L.nx,py=Math.floor(i/L.nx);h+='<option value="'+i+'">Page '+(i+1)+' of '+n+'  (row '+(py+1)+', col '+(px+1)+')</option>';}sel.innerHTML=h;}
   else sel.innerHTML='<option value="'+curPage+'">Page '+(curPage+1)+' of '+fmt(n)+'</option>';
   sel.value=curPage;
-  $("zipTo").max=n;$("zipFrom").max=n;if(+$("zipTo").value>n||+$("zipTo").value<1)$("zipTo").value=Math.min(n,60);
-  $("pageSummary").textContent=fmt(n)+" pages ("+L.nx+" across x "+L.ny+" down), "+L.perC+" x "+L.perR+" spots per page";
+  $("zipTo").max=n;$("zipFrom").max=n;$("zipFrom").value=1;$("zipTo").value=Math.min(n,60);
+  $("pageSummary").textContent=fmt(n)+" pages ("+L.nx+" across x "+L.ny+" down, "+L.orient+"), "+L.perC+" x "+L.perR+" spots per page";
   var cvs=$("pageCanvas");drawPage(cvs,curPage,110);renderStats();
 }
-["paper","margin","section"].forEach(function(id){$(id).addEventListener("change",renderPages);});
+["paper","margin","section"].forEach(function(id){$(id).addEventListener("change",function(){if($("sizeBy").value==="sheets"){refreshPlan();build();}else renderPages();});});
 $("pageSel").onchange=function(){curPage=+this.value;renderPages();};
 $("pgPrev").onclick=function(){if(curPage>0){curPage--;renderPages();}};
 $("pgNext").onclick=function(){var L=pageLayout();if(curPage<L.nx*L.ny-1){curPage++;renderPages();}};
@@ -662,7 +694,11 @@ function drawPage(cvs,idx,dpi){
   cvs.width=W;cvs.height=H;var x=cvs.getContext("2d");
   x.fillStyle="#fff";x.fillRect(0,0,W,H);
   var px=idx%L.nx,py=Math.floor(idx/L.nx),c0=px*L.perC,r0=py*L.perR,c1=Math.min(P.cols,c0+L.perC),r1=Math.min(P.rows,r0+L.perR);
-  var s=P.pitch*k,gx=L.m*k,gy=(L.m+L.header)*k,n=L.nx*L.ny;
+  var s=P.pitch*k,gx=(W-L.perC*s)/2,gy=(L.m+L.header)*k,n=L.nx*L.ny;
+  var rx=gx+L.perC*s-50*k, ry=L.m*k+0.6*k;
+  x.strokeStyle="#18202E";x.lineWidth=Math.max(1,0.25*k);x.beginPath();x.moveTo(rx,ry+2.4*k);x.lineTo(rx+50*k,ry+2.4*k);
+  for(var t=0;t<=50;t+=10){x.moveTo(rx+t*k,ry+2.4*k);x.lineTo(rx+t*k,ry+(t%50?1.2:0)*k);}x.stroke();
+  x.fillStyle="#5A6477";x.font=(2.2*k).toFixed(1)+"px 'IBM Plex Sans',sans-serif";x.textAlign="right";x.textBaseline="alphabetic";x.fillText("Scale check: this bar is 50 mm",rx-2*k,ry+2.4*k);
   x.fillStyle="#18202E";x.font="600 "+(3.4*k).toFixed(1)+"px 'IBM Plex Sans',sans-serif";x.textBaseline="alphabetic";x.textAlign="left";
   x.fillText("Page "+(idx+1)+" of "+n+"   (page row "+(py+1)+", page column "+(px+1)+")",gx,L.m*k+3.6*k);
   x.font=(2.6*k).toFixed(1)+"px 'IBM Plex Sans',sans-serif";x.fillStyle="#5A6477";
@@ -719,16 +755,18 @@ $("dlZip").onclick=async function(){
   if(!P)return;var L=pageLayout(),n=L.nx*L.ny,a=Math.max(1,parseInt($("zipFrom").value)||1),b=Math.min(n,parseInt($("zipTo").value)||1);
   if(b<a){$("zipStatus").textContent="The last page must come after the first page.";return;}
   if(b-a+1>60){b=a+59;$("zipTo").value=b;}
-  if(typeof JSZip==="undefined"){$("zipStatus").textContent="The ZIP tool did not load. Download pages one at a time instead.";return;}
-  var zip=new JSZip(),btn=$("dlZip");btn.disabled=true;
-  var keys=drawKeyPages(300);
-  for(var i=0;i<keys.length;i++){zip.file("00-color-key-"+(i+1)+".png",await canvasBlob(keys[i]));}
-  zip.file("color-key.csv",csv());
-  var c=document.createElement("canvas");
-  for(var p=a;p<=b;p++){$("zipStatus").textContent="Drawing page "+p+" ("+(p-a+1)+" of "+(b-a+1)+")";drawPage(c,p-1,300);zip.file("page-"+String(p).padStart(4,"0")+".png",await canvasBlob(c));await new Promise(function(r){setTimeout(r,0);});}
-  $("zipStatus").textContent="Packing ZIP";
-  var blob=await zip.generateAsync({type:"blob"});saveBlob(blob,"spots-pages-"+a+"-"+b+".zip");
-  $("zipStatus").textContent="ZIP ready with pages "+a+" to "+b+" and the color key.";btn.disabled=false;
+  if(!window.jspdf||!window.jspdf.jsPDF){$("zipStatus").textContent="The PDF tool did not load. Check the connection and reload the page.";return;}
+  var btn=$("dlZip");btn.disabled=true;
+  try{
+    var doc=null,c=document.createElement("canvas");
+    var add=function(cv){var o=L.w>L.h?"landscape":"portrait";if(!doc){doc=new window.jspdf.jsPDF({unit:"mm",format:[L.w,L.h],orientation:o,compress:true});}else{doc.addPage([L.w,L.h],o);}doc.addImage(cv.toDataURL("image/jpeg",0.85),"JPEG",0,0,L.w,L.h,undefined,"FAST");};
+    for(var p=a;p<=b;p++){$("zipStatus").textContent="Drawing page "+p+" ("+(p-a+1)+" of "+(b-a+1)+")";drawPage(c,p-1,300);add(c);await new Promise(function(r){setTimeout(r,0);});}
+    $("zipStatus").textContent="Adding color key";
+    drawKeyPages(300).forEach(add);
+    saveBlob(doc.output("blob"),"spots-pages-"+a+"-"+b+".pdf");
+    $("zipStatus").textContent="PDF ready: pages "+a+" to "+b+" plus the color key.";
+  }catch(err){$("zipStatus").textContent="The PDF could not be made. Try a smaller page range.";}
+  btn.disabled=false;
 };
 
 // ---------- start ----------
