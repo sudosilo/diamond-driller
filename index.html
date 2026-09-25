@@ -248,7 +248,7 @@ tbody tr.sel{background:var(--accent-soft)}
                 </select>
               </label>
               <label class="field"><span>Margin (mm)</span>
-                <input type="number" id="margin" min="3" max="40" step="1" value="12">
+                <input type="number" id="margin" min="16" max="40" step="1" value="16">
               </label>
             </div>
             <div class="row">
@@ -281,7 +281,7 @@ tbody tr.sel{background:var(--accent-soft)}
             <div class="row">
               <button class="mini primary" id="dlZip">Download print PDF (pages + color key)</button>
             </div>
-            <div class="note">The PDF pages are exact paper size. Print at "Actual size" or 100%, never "Fit to page". Print page 1 first and measure the 50 mm scale bar at the top before printing the rest. Up to 60 pages per PDF.</div>
+            <div class="note">The PDF pages are exact paper size. Print at "Actual size" or 100%, never "Fit to page". Print page 1 first and hold a ruler to the mm scales on the top and left edges. They start at 0 on the grid corner, and every 30 mm should line up with 10 spots. Up to 60 pages per PDF.</div>
             <div class="note" id="zipStatus"></div>
           </div>
           <div class="pageprev"><canvas id="pageCanvas" width="10" height="10"></canvas></div>
@@ -660,7 +660,7 @@ function hoverAt(x,y){
 // ---------- pages ----------
 function pageCap(orient,pitch,sheetsMode){
   if(sheetsMode===undefined) sheetsMode=$("sizeBy").value==="sheets";
-  var pp=PAPERS[$("paper").value]||PAPERS.letter, m=Math.max(3,parseFloat($("margin").value)||12), header=10;
+  var pp=PAPERS[$("paper").value]||PAPERS.letter, m=Math.max(16,parseFloat($("margin").value)||16), header=10;
   var w=orient==="landscape"?pp[1]:pp[0], h=orient==="landscape"?pp[0]:pp[1];
   var perC=Math.max(1,Math.floor((w-2*m)/pitch)), perR=Math.max(1,Math.floor((h-2*m-header)/pitch));
   var sec=sheetsMode?0:(parseInt($("section").value)||0); if(sec>0){perC=Math.min(perC,sec);perR=Math.min(perR,sec);}
@@ -695,10 +695,6 @@ function drawPage(cvs,idx,dpi){
   x.fillStyle="#fff";x.fillRect(0,0,W,H);
   var px=idx%L.nx,py=Math.floor(idx/L.nx),c0=px*L.perC,r0=py*L.perR,c1=Math.min(P.cols,c0+L.perC),r1=Math.min(P.rows,r0+L.perR);
   var s=P.pitch*k,gx=(W-L.perC*s)/2,gy=(L.m+L.header)*k,n=L.nx*L.ny;
-  var rx=gx+L.perC*s-50*k, ry=L.m*k+0.6*k;
-  x.strokeStyle="#18202E";x.lineWidth=Math.max(1,0.25*k);x.beginPath();x.moveTo(rx,ry+2.4*k);x.lineTo(rx+50*k,ry+2.4*k);
-  for(var t=0;t<=50;t+=10){x.moveTo(rx+t*k,ry+2.4*k);x.lineTo(rx+t*k,ry+(t%50?1.2:0)*k);}x.stroke();
-  x.fillStyle="#5A6477";x.font=(2.2*k).toFixed(1)+"px 'IBM Plex Sans',sans-serif";x.textAlign="right";x.textBaseline="alphabetic";x.fillText("Scale check: this bar is 50 mm",rx-2*k,ry+2.4*k);
   x.fillStyle="#18202E";x.font="600 "+(3.4*k).toFixed(1)+"px 'IBM Plex Sans',sans-serif";x.textBaseline="alphabetic";x.textAlign="left";
   x.fillText("Page "+(idx+1)+" of "+n+"   (page row "+(py+1)+", page column "+(px+1)+")",gx,L.m*k+3.6*k);
   x.font=(2.6*k).toFixed(1)+"px 'IBM Plex Sans',sans-serif";x.fillStyle="#5A6477";
@@ -719,6 +715,18 @@ function drawPage(cvs,idx,dpi){
   for(r=Math.ceil(r0/10)*10;r<=r1;r+=10){ly=gy+(r-r0)*s;x.moveTo(gx,ly);x.lineTo(gx+(c1-c0)*s,ly);}
   x.stroke();
   x.strokeStyle="#18202E";x.lineWidth=Math.max(1,0.25*k);x.strokeRect(gx,gy,(c1-c0)*s,(r1-r0)*s);
+  // mm rulers on the top and left edges, zero at the grid corner
+  var gw=Math.round(L.perC*P.pitch), gh=Math.round(L.perR*P.pitch), base=11.5*k, t, tl;
+  x.strokeStyle="#18202E";x.fillStyle="#18202E";x.lineWidth=Math.max(0.5,0.15*k);x.beginPath();
+  x.moveTo(gx,base);x.lineTo(gx+gw*k,base);x.moveTo(base,gy);x.lineTo(base,gy+gh*k);
+  for(t=0;t<=gw;t++){tl=t%10===0?3.5:t%5===0?2:1;x.moveTo(gx+t*k,base);x.lineTo(gx+t*k,base-tl*k);}
+  for(t=0;t<=gh;t++){tl=t%10===0?3.5:t%5===0?2:1;x.moveTo(base,gy+t*k);x.lineTo(base-tl*k,gy+t*k);}
+  x.stroke();
+  x.font=(1.6*k).toFixed(1)+"px 'IBM Plex Mono',monospace";x.textAlign="left";x.textBaseline="top";
+  for(t=10;t<=gw;t+=10){x.fillText(String(t),gx+t*k+0.4*k,base-3.5*k);}
+  x.fillText("0 mm",gx+0.4*k,base-3.5*k);
+  for(t=10;t<=gh;t+=10){x.save();x.translate(base-3.5*k,gy+t*k+0.4*k);x.rotate(Math.PI/2);x.fillText(String(t),0,-1.7*k);x.restore();}
+
   if(fs*25.4/dpi>=0.6){
     x.font="600 "+fs.toFixed(1)+"px 'IBM Plex Mono',monospace";x.textAlign="center";x.textBaseline="middle";x.fillStyle="#18202E";
     for(r=r0;r<r1;r++)for(c=c0;c<c1;c++){var cc=P.colors[P.cells[r*P.cols+c]];x.fillText(labelOf(cc),gx+(c-c0)*s+s/2,gy+(r-r0)*s+s/2+fs*0.05);}
